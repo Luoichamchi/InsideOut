@@ -40,16 +40,22 @@ const MAX_PULL = 120;
 
 function usePullToRefresh(onRefresh: () => Promise<void>) {
   const [pull, setPull] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const startY = useRef<number | null>(null);
   const pullRef = useRef(0);
 
   useEffect(() => {
     const onTouchStart = (e: TouchEvent) => {
-      startY.current = window.scrollY <= 0 ? e.touches[0].clientY : null;
+      if (refreshing || window.scrollY > 0) {
+        startY.current = null;
+        return;
+      }
+      startY.current = e.touches[0].clientY;
+      setDragging(true);
     };
     const onTouchMove = (e: TouchEvent) => {
-      if (startY.current === null || refreshing) return;
+      if (startY.current === null) return;
       const delta = e.touches[0].clientY - startY.current;
       if (delta <= 0) return;
       e.preventDefault();
@@ -59,12 +65,18 @@ function usePullToRefresh(onRefresh: () => Promise<void>) {
     const onTouchEnd = () => {
       if (startY.current === null) return;
       startY.current = null;
+      setDragging(false);
       if (pullRef.current >= PULL_THRESHOLD) {
+        setPull(PULL_THRESHOLD);
         setRefreshing(true);
-        onRefresh().finally(() => setRefreshing(false));
+        onRefresh().finally(() => {
+          setRefreshing(false);
+          setPull(0);
+        });
+      } else {
+        setPull(0);
       }
       pullRef.current = 0;
-      setPull(0);
     };
     window.addEventListener("touchstart", onTouchStart, { passive: true });
     window.addEventListener("touchmove", onTouchMove, { passive: false });
@@ -76,7 +88,7 @@ function usePullToRefresh(onRefresh: () => Promise<void>) {
     };
   }, [onRefresh, refreshing]);
 
-  return { pull, refreshing };
+  return { pull, dragging, refreshing };
 }
 
 function App() {
@@ -113,7 +125,7 @@ function App() {
     reload();
   }, [reload]);
 
-  const { pull, refreshing } = usePullToRefresh(reload);
+  const { pull, dragging, refreshing } = usePullToRefresh(reload);
 
   if (loading) {
     return <div className="app">Đang tải...</div>;
@@ -155,17 +167,12 @@ function App() {
     <div className="app">
       <header className="app-header">Goal Fighter</header>
 
-      {(pull > 0 || refreshing) && (
-        <div
-          className="pull-indicator"
-          style={{
-            opacity: Math.min(pull / PULL_THRESHOLD, 1),
-            transform: `translateY(${Math.min(pull, PULL_THRESHOLD)}px)`,
-          }}
-        >
-          {refreshing ? "Đang tải lại..." : pull >= PULL_THRESHOLD ? "Thả để tải lại" : "Kéo để tải lại"}
-        </div>
-      )}
+      <div
+        className="pull-indicator"
+        style={{ height: pull, transition: dragging ? "none" : "height 200ms ease" }}
+      >
+        {refreshing ? "Đang tải lại..." : pull >= PULL_THRESHOLD ? "Thả để tải lại" : pull > 0 ? "Kéo để tải lại" : ""}
+      </div>
 
       {tab === "dashboard" && <Dashboard entries={entries} widgetProps={widgetProps} />}
       {tab === "transactions" && (

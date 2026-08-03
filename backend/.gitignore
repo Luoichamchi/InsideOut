@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local dev database (production uses a separate Docker volume)
+finance.db
