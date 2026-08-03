@@ -4,8 +4,13 @@ import type { Transaction, MonthlyConfig, AppSettings } from "../domain/types";
 // the LAN opens the dev server via the machine's IP instead of localhost.
 // VITE_API_PORT lets a scratch test frontend point at scripts/dev_test_server.sh's
 // port (8001) instead of the real backend on 8000 — unset for real usage.
-const API_PORT = import.meta.env.VITE_API_PORT ?? "8000";
-const BASE = `${window.location.protocol}//${window.location.hostname}:${API_PORT}/api`;
+// In a production build with no VITE_API_PORT set, assume nginx proxies /api
+// on the same origin (see frontend/nginx.conf) instead of guessing port 8000.
+const API_PORT = import.meta.env.VITE_API_PORT;
+const BASE =
+  import.meta.env.PROD && !API_PORT
+    ? "/api"
+    : `${window.location.protocol}//${window.location.hostname}:${API_PORT ?? "8000"}/api`;
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

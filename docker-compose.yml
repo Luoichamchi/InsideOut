@@ -1,0 +1,19 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      - FINANCE_DB_PATH=/data/finance.db
+    volumes:
+      - finance_data:/data
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  finance_data:
