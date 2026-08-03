@@ -1,6 +1,12 @@
 from typing import Optional
 from fastapi import APIRouter, HTTPException
-from app.schemas.transaction import TransactionCreate, TransactionUpdate, TransactionOut
+from app.schemas.transaction import (
+    TransactionCreate,
+    TransactionUpdate,
+    TransactionOut,
+    MonthSummary,
+    LastSideIncomeDate,
+)
 from app.services import transactions as service
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
@@ -9,6 +15,16 @@ router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 @router.get("", response_model=list[TransactionOut])
 def list_transactions(month: Optional[str] = None):
     return service.list_transactions(month)
+
+
+@router.get("/monthly-summary", response_model=list[MonthSummary])
+def monthly_summary():
+    return service.monthly_summary()
+
+
+@router.get("/last-side-income-date", response_model=LastSideIncomeDate)
+def last_side_income_date(before: str):
+    return {"date": service.last_side_income_date(before)}
 
 
 @router.post("", response_model=TransactionOut, status_code=201)

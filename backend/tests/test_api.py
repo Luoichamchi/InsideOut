@@ -85,6 +85,48 @@ def test_config_upsert_is_idempotent_and_updates_in_place():
     assert client.get("/api/config/2099-01").status_code == 404
 
 
+def test_monthly_summary_groups_by_month_and_type():
+    client.post(
+        "/api/transactions",
+        json={"date": "2026-10-01", "type": "side_income", "amount": 100_000, "note": None},
+    )
+    client.post(
+        "/api/transactions",
+        json={"date": "2026-10-15", "type": "side_income", "amount": 50_000, "note": None},
+    )
+    client.post(
+        "/api/transactions",
+        json={"date": "2026-10-20", "type": "expense", "amount": 30_000, "note": None},
+    )
+
+    summary = client.get("/api/transactions/monthly-summary")
+    assert summary.status_code == 200
+    row = next(m for m in summary.json() if m["month"] == "2026-10")
+    assert row["side_income"] == 150_000
+    assert row["expense"] == 30_000
+    assert row["saving"] == 0
+
+
+def test_last_side_income_date_ignores_dates_after_before_param():
+    client.post(
+        "/api/transactions",
+        json={"date": "2026-11-05", "type": "side_income", "amount": 1, "note": None},
+    )
+    client.post(
+        "/api/transactions",
+        json={"date": "2026-11-20", "type": "side_income", "amount": 1, "note": None},
+    )
+
+    latest = client.get("/api/transactions/last-side-income-date", params={"before": "2026-11-30"})
+    assert latest.json()["date"] == "2026-11-20"
+
+    capped = client.get("/api/transactions/last-side-income-date", params={"before": "2026-11-10"})
+    assert capped.json()["date"] == "2026-11-05"
+
+    none_found = client.get("/api/transactions/last-side-income-date", params={"before": "2000-01-01"})
+    assert none_found.json()["date"] is None
+
+
 def test_settings_is_a_single_global_row_not_tied_to_month():
     default = client.get("/api/settings")
     assert default.status_code == 200

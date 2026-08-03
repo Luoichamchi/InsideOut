@@ -8,6 +8,13 @@ export interface Transaction {
   note: string | null;
 }
 
+export interface MonthSummary {
+  month: string; // YYYY-MM
+  side_income: number;
+  expense: number;
+  saving: number;
+}
+
 export interface MonthlyConfig {
   month: string; // YYYY-MM
   salary_amount: number;

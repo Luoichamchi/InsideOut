@@ -1,19 +1,25 @@
 import type {
   Transaction,
+  MonthSummary,
   MonthlyConfig,
   CheerContext,
   RestrainContext,
   GrowthContext,
 } from "./types";
 
-export function sumByType(
-  transactions: Transaction[],
-  month: string,
-  type: Transaction["type"]
-): number {
-  return transactions
-    .filter((t) => t.type === type && t.date.slice(0, 7) === month)
-    .reduce((sum, t) => sum + t.amount, 0);
+// Number of days used when there's no prior side_income at all — matches the
+// old client-side walk-back guard, kept only as a display cap.
+const DRY_DAYS_CAP = 3650;
+
+function summaryFor(summaries: MonthSummary[], month: string): MonthSummary {
+  return (
+    summaries.find((s) => s.month === month) ?? {
+      month,
+      side_income: 0,
+      expense: 0,
+      saving: 0,
+    }
+  );
 }
 
 export function previousMonthKey(month: string): string {
@@ -22,45 +28,13 @@ export function previousMonthKey(month: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-// Consecutive days with no side_income, walking back from referenceDate.
-export function computeDryDays(
-  transactions: Transaction[],
-  referenceDate: string
-): number {
-  const sideDays = new Set(
-    transactions.filter((t) => t.type === "side_income").map((t) => t.date)
-  );
-  const cursor = new Date(`${referenceDate}T00:00:00`);
-  let count = 0;
-  while (!sideDays.has(toISODate(cursor))) {
-    count++;
-    cursor.setDate(cursor.getDate() - 1);
-    if (count > 3650) break; // ponytail: safety guard, not a real calendar bound
-  }
-  return count;
-}
-
-function toISODate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-}
-
-export function isNewRecord(transactions: Transaction[], month: string): boolean {
-  const totals: Record<string, number> = {};
-  for (const t of transactions) {
-    if (t.type !== "side_income") continue;
-    const m = t.date.slice(0, 7);
-    totals[m] = (totals[m] ?? 0) + t.amount;
-  }
-  const current = totals[month] ?? 0;
-  const priorMax = Math.max(
-    0,
-    ...Object.entries(totals)
-      .filter(([m]) => m !== month)
-      .map(([, v]) => v)
-  );
-  return current > priorMax;
+// Whole-day gap between two YYYY-MM-DD dates (b - a), or the display cap when
+// there's no prior side_income date to measure from.
+export function dryDaysSince(lastSideIncomeDate: string | null, referenceDate: string): number {
+  if (!lastSideIncomeDate) return DRY_DAYS_CAP;
+  const a = new Date(`${lastSideIncomeDate}T00:00:00`);
+  const b = new Date(`${referenceDate}T00:00:00`);
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
 
 // 31-slot grid for sales_log; index i = day i+1, false past end of month.
@@ -80,20 +54,25 @@ export function computeSalesLog(transactions: Transaction[], month: string): boo
 }
 
 export function buildCheerContext(
-  transactions: Transaction[],
+  summaries: MonthSummary[],
   config: MonthlyConfig,
-  referenceDate: string
+  dryDays: number
 ): CheerContext {
+  const current = summaryFor(summaries, config.month).side_income;
+  const priorMax = Math.max(
+    0,
+    ...summaries.filter((s) => s.month !== config.month).map((s) => s.side_income)
+  );
   return {
-    profit: sumByType(transactions, config.month, "side_income"),
+    profit: current,
     goal: config.side_goal,
-    dryDays: computeDryDays(transactions, referenceDate),
-    isRecord: isNewRecord(transactions, config.month),
+    dryDays,
+    isRecord: current > priorMax,
   };
 }
 
 export function buildRestrainContext(
-  transactions: Transaction[],
+  summaries: MonthSummary[],
   configs: MonthlyConfig[],
   month: string
 ): RestrainContext {
@@ -102,22 +81,22 @@ export function buildRestrainContext(
   const prevMonth = previousMonthKey(month);
   const prevConfig = configs.find((c) => c.month === prevMonth);
   const wasOverLastMonth = prevConfig
-    ? sumByType(transactions, prevMonth, "expense") > prevConfig.budget
+    ? summaryFor(summaries, prevMonth).expense > prevConfig.budget
     : false;
   return {
-    spent: sumByType(transactions, month, "expense"),
+    spent: summaryFor(summaries, month).expense,
     budget: config.budget,
     wasOverLastMonth,
   };
 }
 
 export function buildGrowthContext(
-  transactions: Transaction[],
+  summaries: MonthSummary[],
   month: string,
   savingsTarget: number
 ): GrowthContext {
   return {
-    saved: sumByType(transactions, month, "saving"),
+    saved: summaryFor(summaries, month).saving,
     target: savingsTarget,
   };
 }
@@ -133,18 +112,19 @@ export interface MonthOverview {
 // config fall back to salary: 0 rather than throwing, since past/future
 // months may never have had a config row.
 export function buildYearlyOverview(
-  transactions: Transaction[],
+  summaries: MonthSummary[],
   configs: MonthlyConfig[],
   year: string
 ): MonthOverview[] {
   return Array.from({ length: 12 }, (_, i) => {
     const month = `${year}-${String(i + 1).padStart(2, "0")}`;
     const config = configs.find((c) => c.month === month);
+    const s = summaryFor(summaries, month);
     return {
       month,
       salary: config?.salary_amount ?? 0,
-      profit: sumByType(transactions, month, "side_income"),
-      spent: sumByType(transactions, month, "expense"),
+      profit: s.side_income,
+      spent: s.expense,
     };
   });
 }

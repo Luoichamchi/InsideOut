@@ -6,15 +6,22 @@ import {
   buildGrowthContext,
   buildYearlyOverview,
   computeSalesLog,
+  dryDaysSince,
 } from "./domain/aggregate";
 import { deriveCheer, deriveRestrain, deriveGrowth } from "./domain/mascot";
-import { fetchTransactions, fetchConfigs, fetchSettings } from "./api/client";
+import {
+  fetchTransactions,
+  fetchMonthlySummary,
+  fetchLastSideIncomeDate,
+  fetchConfigs,
+  fetchSettings,
+} from "./api/client";
 import { useDashboardConfig } from "./config/useDashboardConfig";
 import { TransactionsScreen } from "./screens/TransactionsScreen";
 import { ConfigScreen } from "./screens/ConfigScreen";
 import { WidgetSettingsScreen } from "./screens/WidgetSettingsScreen";
 import { todayISO, currentMonth } from "./today";
-import type { Transaction, MonthlyConfig, AppSettings } from "./domain/types";
+import type { Transaction, MonthSummary, MonthlyConfig, AppSettings } from "./domain/types";
 import type { WidgetPropsMap } from "./widgets/registry";
 import "./theme/theme.css";
 
@@ -32,7 +39,9 @@ function App() {
   const month = currentMonth();
   const today = todayISO();
   const [tab, setTab] = useState<Tab>("dashboard");
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [monthTransactions, setMonthTransactions] = useState<Transaction[]>([]);
+  const [summaries, setSummaries] = useState<MonthSummary[]>([]);
+  const [dryDays, setDryDays] = useState(0);
   const [configs, setConfigs] = useState<MonthlyConfig[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [chartYear, setChartYear] = useState(month.slice(0, 4));
@@ -40,16 +49,21 @@ function App() {
   const { entries, toggleVisible, toggleOption, moveUp, moveDown } = useDashboardConfig();
 
   const reload = useCallback(async () => {
-    const [allTransactions, allConfigs, appSettings] = await Promise.all([
-      fetchTransactions(),
-      fetchConfigs(),
-      fetchSettings(),
-    ]);
-    setTransactions(allTransactions);
+    const [thisMonthTransactions, monthlySummaries, lastSideIncomeDate, allConfigs, appSettings] =
+      await Promise.all([
+        fetchTransactions(month),
+        fetchMonthlySummary(),
+        fetchLastSideIncomeDate(today),
+        fetchConfigs(),
+        fetchSettings(),
+      ]);
+    setMonthTransactions(thisMonthTransactions);
+    setSummaries(monthlySummaries);
+    setDryDays(dryDaysSince(lastSideIncomeDate, today));
     setConfigs(allConfigs);
     setSettings(appSettings);
     setLoading(false);
-  }, []);
+  }, [month, today]);
 
   useEffect(() => {
     reload();
@@ -61,10 +75,10 @@ function App() {
 
   const config: MonthlyConfig = configs.find((c) => c.month === month) ?? { month, ...DEFAULT_CONFIG_VALUES };
 
-  const cheerCtx = buildCheerContext(transactions, config, today);
-  const restrainCtx = buildRestrainContext(transactions, configs.some((c) => c.month === month) ? configs : [...configs, config], month);
-  const growthCtx = buildGrowthContext(transactions, month, settings.savings_target);
-  const yearOverview = buildYearlyOverview(transactions, configs, chartYear);
+  const cheerCtx = buildCheerContext(summaries, config, dryDays);
+  const restrainCtx = buildRestrainContext(summaries, configs.some((c) => c.month === month) ? configs : [...configs, config], month);
+  const growthCtx = buildGrowthContext(summaries, month, settings.savings_target);
+  const yearOverview = buildYearlyOverview(summaries, configs, chartYear);
 
   const widgetProps: WidgetPropsMap = {
     income_compare: {
@@ -87,7 +101,7 @@ function App() {
       growthState: deriveGrowth(growthCtx),
     },
     sales_log: {
-      days: computeSalesLog(transactions, month),
+      days: computeSalesLog(monthTransactions, month),
     },
   };
 
@@ -98,7 +112,7 @@ function App() {
       {tab === "dashboard" && <Dashboard entries={entries} widgetProps={widgetProps} />}
       {tab === "transactions" && (
         <TransactionsScreen
-          transactions={transactions.filter((t) => t.date.slice(0, 7) === month)}
+          transactions={monthTransactions}
           today={today}
           onChanged={reload}
         />

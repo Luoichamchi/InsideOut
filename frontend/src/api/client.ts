@@ -1,4 +1,4 @@
-import type { Transaction, MonthlyConfig, AppSettings } from "../domain/types";
+import type { Transaction, MonthlyConfig, AppSettings, MonthSummary } from "../domain/types";
 
 // Same hostname the page was loaded from, so this also works when a phone on
 // the LAN opens the dev server via the machine's IP instead of localhost.
@@ -26,6 +26,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function fetchTransactions(month?: string): Promise<Transaction[]> {
   return request(month ? `/transactions?month=${month}` : "/transactions");
+}
+
+export function fetchMonthlySummary(): Promise<MonthSummary[]> {
+  return request("/transactions/monthly-summary");
+}
+
+export function fetchLastSideIncomeDate(before: string): Promise<string | null> {
+  return request<{ date: string | null }>(`/transactions/last-side-income-date?before=${before}`).then(
+    (r) => r.date
+  );
 }
 
 export function createTransaction(data: Omit<Transaction, "id">): Promise<Transaction> {

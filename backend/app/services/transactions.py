@@ -18,6 +18,36 @@ def list_transactions(month: Optional[str] = None) -> list[dict]:
         conn.close()
 
 
+def monthly_summary() -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT substr(date, 1, 7) AS month, type, SUM(amount) AS total "
+            "FROM transactions GROUP BY month, type"
+        ).fetchall()
+    finally:
+        conn.close()
+    by_month: dict[str, dict] = {}
+    for r in rows:
+        entry = by_month.setdefault(
+            r["month"], {"month": r["month"], "side_income": 0, "expense": 0, "saving": 0}
+        )
+        entry[r["type"]] = r["total"]
+    return sorted(by_month.values(), key=lambda e: e["month"])
+
+
+def last_side_income_date(before: str) -> Optional[str]:
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT MAX(date) AS date FROM transactions WHERE type = 'side_income' AND date <= ?",
+            (before,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return row["date"] if row else None
+
+
 def create_transaction(data: TransactionCreate) -> dict:
     conn = get_connection()
     try:

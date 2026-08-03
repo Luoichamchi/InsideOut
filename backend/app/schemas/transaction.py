@@ -24,3 +24,14 @@ class TransactionOut(BaseModel):
     type: TransactionType
     amount: int
     note: Optional[str] = None
+
+
+class MonthSummary(BaseModel):
+    month: str  # YYYY-MM
+    side_income: int
+    expense: int
+    saving: int
+
+
+class LastSideIncomeDate(BaseModel):
+    date: Optional[str] = None  # YYYY-MM-DD
