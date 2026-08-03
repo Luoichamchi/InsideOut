@@ -1,0 +1,7 @@
+{
+  "widgets": [
+    { "key": "income_compare", "visible": true, "order": 1, "options": { "showMascot": true, "showSpendingColumn": true } },
+    { "key": "savings_goal", "visible": true, "order": 2 },
+    { "key": "sales_log", "visible": true, "order": 3 }
+  ]
+}
