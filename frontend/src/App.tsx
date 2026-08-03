@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Dashboard } from "./dashboard/Dashboard";
 import {
   buildCheerContext,
@@ -35,6 +35,50 @@ const DEFAULT_SETTINGS: AppSettings = { savings_target: 50_000_000 };
 
 type Tab = "dashboard" | "transactions" | "config" | "settings";
 
+const PULL_THRESHOLD = 70;
+const MAX_PULL = 120;
+
+function usePullToRefresh(onRefresh: () => Promise<void>) {
+  const [pull, setPull] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const startY = useRef<number | null>(null);
+  const pullRef = useRef(0);
+
+  useEffect(() => {
+    const onTouchStart = (e: TouchEvent) => {
+      startY.current = window.scrollY <= 0 ? e.touches[0].clientY : null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (startY.current === null || refreshing) return;
+      const delta = e.touches[0].clientY - startY.current;
+      if (delta <= 0) return;
+      e.preventDefault();
+      pullRef.current = Math.min(delta * 0.5, MAX_PULL);
+      setPull(pullRef.current);
+    };
+    const onTouchEnd = () => {
+      if (startY.current === null) return;
+      startY.current = null;
+      if (pullRef.current >= PULL_THRESHOLD) {
+        setRefreshing(true);
+        onRefresh().finally(() => setRefreshing(false));
+      }
+      pullRef.current = 0;
+      setPull(0);
+    };
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd);
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [onRefresh, refreshing]);
+
+  return { pull, refreshing };
+}
+
 function App() {
   const month = currentMonth();
   const today = todayISO();
@@ -68,6 +112,8 @@ function App() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  const { pull, refreshing } = usePullToRefresh(reload);
 
   if (loading) {
     return <div className="app">Đang tải...</div>;
@@ -108,6 +154,18 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">Goal Fighter</header>
+
+      {(pull > 0 || refreshing) && (
+        <div
+          className="pull-indicator"
+          style={{
+            opacity: Math.min(pull / PULL_THRESHOLD, 1),
+            transform: `translateY(${Math.min(pull, PULL_THRESHOLD)}px)`,
+          }}
+        >
+          {refreshing ? "Đang tải lại..." : pull >= PULL_THRESHOLD ? "Thả để tải lại" : "Kéo để tải lại"}
+        </div>
+      )}
 
       {tab === "dashboard" && <Dashboard entries={entries} widgetProps={widgetProps} />}
       {tab === "transactions" && (
